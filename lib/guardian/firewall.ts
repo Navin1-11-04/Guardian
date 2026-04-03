@@ -1,20 +1,25 @@
 // lib/guardian/firewall.ts
-import { tool } from "@langchain/core/tools";
 import { evaluate, Provider, Action } from "./policy";
 import { writeAuditLog } from "./audit";
-import { InterruptError } from "@auth0/ai/interrupts";
+import { TokenVaultError } from "@auth0/ai/interrupts";
+import { z } from "zod";
+import { tool, DynamicStructuredTool } from "@langchain/core/tools";
 
 export function guardedTool(
-  baseTool: ReturnType<typeof tool>,
+  baseTool: DynamicStructuredTool,
   meta: { provider: Provider; action: Action; resource: string }
 ) {
+  const { provider, action, resource } = meta;
+
   return tool(
-    async (input: unknown) => {
-      const { provider, action, resource } = meta;
+    async (input: Record<string, unknown>) => {
+        console.log("guardedTool called with input:", input);
       const decision = evaluate(provider, action, resource);
 
       await writeAuditLog({
-        provider, action, resource,
+        provider,
+        action,
+        resource,
         decision,
         timestamp: new Date().toISOString(),
       });
@@ -24,20 +29,20 @@ export function guardedTool(
       }
 
       if (decision === "step-up") {
-        // This triggers Auth0 CIBA — pauses agent, sends push to user's phone
-        throw new InterruptError(
-          `Step-up authorization required to ${action} on ${provider}/${resource}. 
-           Check your phone to approve.`
+        throw new TokenVaultError(
+          `Authorization required to ${action} on ${provider}/${resource}. Please authenticate.`
         );
       }
 
-      // decision === "allow" — proceed normally
-      return baseTool.invoke(input as any);
+      console.log("Firewall allowing, baseTool keys:", Object.keys(baseTool as any));
+console.log("Has func?", typeof (baseTool as any).func);
+      // decision === "allow" — call the underlying tool's function directly
+      return (baseTool as any).func(input);
     },
     {
       name: baseTool.name,
       description: baseTool.description,
-      schema: (baseTool as any).schema,
+      schema: baseTool.schema ?? z.object({}),
     }
   );
 }

@@ -13,7 +13,7 @@ export interface PolicyRule {
 
 // Default policy — safe baseline
 const DEFAULT_POLICIES: PolicyRule[] = [
-  { id: "1", provider: "github", action: "read",   resource: "repos",    decision: "allow" },
+  { id: "1", provider: "github", action: "read", resource: "repos", decision: "allow" }, // change allow → block
   { id: "2", provider: "github", action: "write",  resource: "repos",    decision: "step-up" },
   { id: "3", provider: "github", action: "delete", resource: "repos",    decision: "block" },
   { id: "4", provider: "google", action: "read",   resource: "calendar", decision: "allow" },

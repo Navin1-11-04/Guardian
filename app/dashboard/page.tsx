@@ -31,27 +31,23 @@ export default function Dashboard() {
   const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetch("/api/policies")
       .then((r) => r.json())
-      .then((d) => {
-        setPolicies(Array.isArray(d.policies) ? d.policies : []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+      .then((d) => setPolicies(d.policies));
 
     fetch("/api/audit")
       .then((r) => r.json())
-      .then((d) => setAuditLog(Array.isArray(d.log) ? d.log : []));
+      .then((d) => setAuditLog(d.log));
   }, []);
 
+  // Poll audit log every 3 seconds
   useEffect(() => {
     const interval = setInterval(() => {
       fetch("/api/audit")
         .then((r) => r.json())
-        .then((d) => setAuditLog(Array.isArray(d.log) ? d.log : []));
+        .then((d) => setAuditLog(d.log));
     }, 3000);
     return () => clearInterval(interval);
   }, []);
@@ -62,7 +58,7 @@ export default function Dashboard() {
     );
   }
 
-  async function savePolicies() {
+  async function savePolcies() {
     setSaving(true);
     await fetch("/api/policies", {
       method: "POST",
@@ -72,14 +68,6 @@ export default function Dashboard() {
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
-  }
-
-  if (loading) {
-    return (
-      <main className="max-w-4xl mx-auto p-6">
-        <p className="text-zinc-400 animate-pulse">Loading policies...</p>
-      </main>
-    );
   }
 
   return (
@@ -105,48 +93,36 @@ export default function Dashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-700">
-              {policies.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="px-4 py-4 text-zinc-500 text-center">
-                    No policies found.
+              {policies.map((policy) => (
+                <tr key={policy.id} className="bg-zinc-900 hover:bg-zinc-800">
+                  <td className="px-4 py-3 font-mono">{policy.provider}</td>
+                  <td className="px-4 py-3 font-mono">{policy.action}</td>
+                  <td className="px-4 py-3 font-mono">{policy.resource}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-2">
+                      {(["allow", "block", "step-up"] as Decision[]).map((d) => (
+                        <button
+                          key={d}
+                          onClick={() => updateDecision(policy.id, d)}
+                          className={`px-3 py-1 rounded-full text-xs font-semibold transition-opacity ${
+                            DECISION_STYLES[d]
+                          } ${policy.decision === d ? "opacity-100 ring-2 ring-white" : "opacity-30"}`}
+                        >
+                          {d}
+                        </button>
+                      ))}
+                    </div>
                   </td>
                 </tr>
-              ) : (
-                policies.map((policy) => (
-                  <tr key={policy.id} className="bg-zinc-900 hover:bg-zinc-800">
-                    <td className="px-4 py-3 font-mono">{policy.provider}</td>
-                    <td className="px-4 py-3 font-mono">{policy.action}</td>
-                    <td className="px-4 py-3 font-mono">{policy.resource}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-2">
-                        {(["allow", "block", "step-up"] as Decision[]).map((d) => (
-                          <button
-                            key={d}
-                            onClick={() => updateDecision(policy.id, d)}
-                            className={`px-3 py-1 rounded-full text-xs font-semibold transition-opacity ${
-                              DECISION_STYLES[d]
-                            } ${
-                              policy.decision === d
-                                ? "opacity-100 ring-2 ring-white"
-                                : "opacity-30 hover:opacity-60"
-                            }`}
-                          >
-                            {d}
-                          </button>
-                        ))}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
+              ))}
             </tbody>
           </table>
         </div>
 
         <button
-          onClick={savePolicies}
+          onClick={savePolcies}
           disabled={saving}
-          className="mt-3 bg-blue-600 text-white px-5 py-2 rounded-lg text-sm disabled:opacity-50 hover:bg-blue-700 transition-colors"
+          className="mt-3 bg-blue-600 text-white px-5 py-2 rounded-lg text-sm disabled:opacity-50"
         >
           {saving ? "Saving..." : saved ? "✓ Saved!" : "Save Changes"}
         </button>
@@ -201,6 +177,7 @@ export default function Dashboard() {
         </div>
       </section>
 
+      {/* Add link on chat page */}
       <p className="text-xs text-zinc-500">
         Changes to policies take effect immediately on the next agent tool call.
       </p>
