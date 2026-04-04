@@ -12,19 +12,16 @@
     "@auth0/ai": "^6.0.0",
     "@auth0/ai-langchain": "^5.0.0",
     "@auth0/nextjs-auth0": "^4.16.1",
-    "@langchain/core": "0.3.80",
-    "@langchain/groq": "^1.1.5",
-    "@langchain/langgraph": "0.4.9",
-     "@langchain/langgraph-sdk": "0.0.109",
-    "google-auth-library": "^9.0.0",
+    "@langchain/core": "^1.1.36",
+    "@langchain/langgraph": "^1.2.6",
     "googleapis": "^120.0.0",
-    "langchain": "0.3.37",
+    "google-auth-library": "^9.0.0",
     "lucide-react": "^1.7.0",
     "next": "16.2.1",
     "octokit": "^5.0.5",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "zod": "3.25.76"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
