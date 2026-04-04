@@ -5,30 +5,45 @@ import { DynamicStructuredTool } from "@langchain/core/tools";
 import { z } from "zod";
 import { Octokit } from "octokit";
 
-const model = new ChatGroq({ model: "llama-3.3-70b-versatile" });
+const model = new ChatGroq({
+  model: "llama-3.3-70b-versatile",
+});
 
 const listRepositoriesTool = new DynamicStructuredTool({
   name: "list_repositories",
-  description: "List the authenticated user's GitHub repositories. No arguments needed.",
+  description: "List the authenticated user's GitHub repositories",
   schema: z.object({}).passthrough(),
-  func: async () => {
+
+  func: async (_, config) => {
     try {
-      console.log("Tool function executing...");
-      const octokit = new Octokit({ auth: process.env.GITHUB_PAT });
-      const { data } = await octokit.rest.repos.listForAuthenticatedUser({
-        visibility: "all",
-      });
-      console.log("Repos fetched:", data.length);
+      const githubToken =
+        config?.configurable?.auth0?.githubToken;
+
+      if (!githubToken) {
+        throw new Error("No GitHub token found");
+      }
+
+      const octokit = new Octokit({ auth: githubToken });
+
+      const { data } =
+        await octokit.rest.repos.listForAuthenticatedUser({
+          visibility: "all",
+        });
+
       return JSON.stringify(
-        data.map((r) => ({ name: r.name, private: r.private, url: r.html_url }))
+        data.map((repo) => ({
+          name: repo.name,
+          private: repo.private,
+          url: repo.html_url,
+        }))
       );
     } catch (err: any) {
-      console.log("Tool error:", err.message);
       return `Error: ${err.message}`;
     }
   },
 });
 
+// 🔒 Firewall wrap
 const tools = [
   guardedTool(listRepositoriesTool, {
     provider: "github",
@@ -37,4 +52,8 @@ const tools = [
   }),
 ];
 
-export const agent = createReactAgent({ llm: model, tools });
+// 🤖 Agent
+export const agent = createReactAgent({
+  llm: model,
+  tools,
+});

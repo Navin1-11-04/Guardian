@@ -1,4 +1,3 @@
-// lib/guardian/firewall.ts
 import { evaluate, Provider, Action } from "./policy";
 import { writeAuditLog } from "./audit";
 import { TokenVaultError } from "@auth0/ai/interrupts";
@@ -12,8 +11,7 @@ export function guardedTool(
   const { provider, action, resource } = meta;
 
   return tool(
-    async (input: Record<string, unknown>) => {
-        console.log("guardedTool called with input:", input);
+    async (input: Record<string, unknown>, config) => {
       const decision = evaluate(provider, action, resource);
 
       await writeAuditLog({
@@ -25,20 +23,17 @@ export function guardedTool(
       });
 
       if (decision === "block") {
-        return `Blocked: your policy does not allow ${action} on ${provider}/${resource}.`;
+        return `Blocked: ${action} on ${provider}/${resource}`;
       }
 
       if (decision === "step-up") {
         throw new TokenVaultError(
-          `Authorization required to ${action} on ${provider}/${resource}. Please authenticate.`
+          `Auth required for ${provider}/${resource}`
         );
       }
 
-      console.log("Firewall allowing, baseTool keys:", Object.keys(baseTool as any));
-      console.log("Calling func...");
-const funcResult = await (baseTool as any).func(input);
-console.log("Func result:", funcResult);
-return funcResult;
+      // ✅ pass config properly
+      return await (baseTool as any).func(input, config);
     },
     {
       name: baseTool.name,
