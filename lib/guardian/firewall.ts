@@ -35,9 +35,10 @@ export function guardedTool(
       }
 
       console.log("Firewall allowing, baseTool keys:", Object.keys(baseTool as any));
-console.log("Has func?", typeof (baseTool as any).func);
-      // decision === "allow" — call the underlying tool's function directly
-      return (baseTool as any).func(input);
+      console.log("Calling func...");
+const funcResult = await (baseTool as any).func(input);
+console.log("Func result:", funcResult);
+return funcResult;
     },
     {
       name: baseTool.name,

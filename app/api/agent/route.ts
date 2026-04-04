@@ -12,13 +12,20 @@ export async function POST(req: NextRequest) {
   const { message } = await req.json();
 
   try {
-    const result = await agent.invoke({
-      messages: [new HumanMessage(message)],
-    });
+    const result = await agent.invoke(
+      {
+        messages: [new HumanMessage(message)],
+      },
+      {
+        configurable: {
+          // Pass the access token so Token Vault can use it
+          accessToken: session.tokenSet?.accessToken,
+        },
+      }
+    );
 
     const messages = result.messages;
 
-    // Find last AIMessage with real content
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i];
       if (m instanceof AIMessage && typeof m.content === "string" && m.content.trim()) {
@@ -26,7 +33,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Fallback: show tool output formatted nicely
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i];
       if (m instanceof ToolMessage) {

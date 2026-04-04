@@ -1,9 +1,10 @@
 import { ChatGroq } from "@langchain/groq";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
+import { withGitHubConnection, getAccessToken } from "./auth0-ai";
 import { guardedTool } from "./guardian/firewall";
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import { z } from "zod";
-import { Octokit } from "octokit";
+import { TokenVaultError } from "@auth0/ai/interrupts";
 
 const model = new ChatGroq({ model: "llama-3.3-70b-versatile" });
 
@@ -14,8 +15,10 @@ const listRepositoriesTool = new DynamicStructuredTool({
   func: async () => {
     try {
       console.log("Tool function executing...");
-      // Temporarily use a personal access token to test
-      const octokit = new Octokit({ auth: process.env.GITHUB_PAT });
+      const accessToken = await getAccessToken();
+      console.log("Token Vault access token received:", !!accessToken);
+      const { Octokit } = await import("octokit");
+      const octokit = new Octokit({ auth: accessToken });
       const { data } = await octokit.rest.repos.listForAuthenticatedUser({
         visibility: "all",
       });
@@ -25,17 +28,19 @@ const listRepositoriesTool = new DynamicStructuredTool({
       );
     } catch (err: any) {
       console.log("Tool error:", err.message);
+      if (err instanceof TokenVaultError) {
+        return `Authentication required: ${err.message}`;
+      }
       return `Error: ${err.message}`;
     }
   },
 });
 
 const tools = [
-  guardedTool(listRepositoriesTool, {
-    provider: "github",
-    action: "read",
-    resource: "repos",
-  }),
+  guardedTool(
+    withGitHubConnection(listRepositoriesTool) as unknown as DynamicStructuredTool,
+    { provider: "github", action: "read", resource: "repos" }
+  ),
 ];
 
 export const agent = createReactAgent({ llm: model, tools });

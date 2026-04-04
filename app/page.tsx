@@ -1,209 +1,108 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
-type Decision = "allow" | "block" | "step-up";
-
-interface PolicyRule {
-  id: string;
-  provider: string;
-  action: string;
-  resource: string;
-  decision: Decision;
+interface Message {
+  role: "user" | "assistant";
+  content: string;
 }
 
-interface AuditEntry {
-  provider: string;
-  action: string;
-  resource: string;
-  decision: string;
-  timestamp: string;
-}
+export default function Home() {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
 
-const DECISION_STYLES: Record<Decision, string> = {
-  allow: "bg-green-500 text-white",
-  block: "bg-red-500 text-white",
-  "step-up": "bg-yellow-500 text-black",
-};
+  async function sendMessage() {
+    if (!input.trim()) return;
 
-export default function Dashboard() {
-  const [policies, setPolicies] = useState<PolicyRule[]>([]);
-  const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [loading, setLoading] = useState(true);
+    const userMessage = input.trim();
+    setInput("");
+    setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
+    setLoading(true);
 
-  useEffect(() => {
-    fetch("/api/policies")
-      .then((r) => r.json())
-      .then((d) => {
-        setPolicies(Array.isArray(d.policies) ? d.policies : []);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+    try {
+      const res = await fetch("/api/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: userMessage }),
+      });
 
-    fetch("/api/audit")
-      .then((r) => r.json())
-      .then((d) => setAuditLog(Array.isArray(d.log) ? d.log : []));
-  }, []);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      fetch("/api/audit")
-        .then((r) => r.json())
-        .then((d) => setAuditLog(Array.isArray(d.log) ? d.log : []));
-    }, 3000);
-    return () => clearInterval(interval);
-  }, []);
-
-  function updateDecision(id: string, decision: Decision) {
-    setPolicies((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, decision } : p))
-    );
-  }
-
-  async function savePolicies() {
-    setSaving(true);
-    await fetch("/api/policies", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ policies }),
-    });
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  }
-
-  if (loading) {
-    return (
-      <main className="max-w-4xl mx-auto p-6">
-        <p className="text-zinc-400 animate-pulse">Loading policies...</p>
-      </main>
-    );
+      const data = await res.json();
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: data.reply ?? data.error ?? "No response",
+        },
+      ]);
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "Error contacting agent." },
+      ]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
-    <main className="max-w-4xl mx-auto p-6 space-y-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">🛡️ Guardian — Policy Dashboard</h1>
-        <a href="/" className="text-sm text-blue-400 hover:underline">
-          ← Back to Chat
+    <main className="flex flex-col h-screen max-w-2xl mx-auto p-4">
+      <div className="flex items-center justify-between mb-2">
+        <h1 className="text-2xl font-bold">🛡️ Guardian — AI Agent Firewall</h1>
+        <a href="/dashboard" className="text-xs text-blue-400 hover:underline">
+          ⚙️ Policy Dashboard →
         </a>
       </div>
 
-      {/* Policy Rules */}
-      <section>
-        <h2 className="text-lg font-semibold mb-3">Policy Rules</h2>
-        <div className="rounded-lg border border-zinc-700 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-zinc-800 text-zinc-400">
-              <tr>
-                <th className="text-left px-4 py-3">Provider</th>
-                <th className="text-left px-4 py-3">Action</th>
-                <th className="text-left px-4 py-3">Resource</th>
-                <th className="text-left px-4 py-3">Decision</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-700">
-              {policies.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="px-4 py-4 text-zinc-500 text-center">
-                    No policies found.
-                  </td>
-                </tr>
-              ) : (
-                policies.map((policy) => (
-                  <tr key={policy.id} className="bg-zinc-900 hover:bg-zinc-800">
-                    <td className="px-4 py-3 font-mono">{policy.provider}</td>
-                    <td className="px-4 py-3 font-mono">{policy.action}</td>
-                    <td className="px-4 py-3 font-mono">{policy.resource}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-2">
-                        {(["allow", "block", "step-up"] as Decision[]).map((d) => (
-                          <button
-                            key={d}
-                            onClick={() => updateDecision(policy.id, d)}
-                            className={`px-3 py-1 rounded-full text-xs font-semibold transition-opacity ${
-                              DECISION_STYLES[d]
-                            } ${
-                              policy.decision === d
-                                ? "opacity-100 ring-2 ring-white"
-                                : "opacity-30 hover:opacity-60"
-                            }`}
-                          >
-                            {d}
-                          </button>
-                        ))}
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+      {/* Chat messages */}
+      <div className="flex-1 overflow-y-auto space-y-3 mb-4 border rounded-lg p-4 bg-zinc-50 dark:bg-zinc-900">
+        {messages.length === 0 && (
+          <p className="text-zinc-400 text-sm">
+            Try: "List my GitHub repositories"
+          </p>
+        )}
+        {messages.map((msg, i) => (
+          <div
+            key={i}
+            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+          >
+            <div
+              className={`rounded-lg px-4 py-2 max-w-[80%] text-sm whitespace-pre-wrap ${
+                msg.role === "user"
+                  ? "bg-blue-600 text-white"
+                  : "bg-zinc-200 dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100"
+              }`}
+            >
+              {msg.content}
+            </div>
+          </div>
+        ))}
+        {loading && (
+          <div className="flex justify-start">
+            <div className="rounded-lg px-4 py-2 bg-zinc-200 dark:bg-zinc-700 text-sm text-zinc-500">
+              Thinking...
+            </div>
+          </div>
+        )}
+      </div>
 
+      {/* Input */}
+      <div className="flex gap-2">
+        <input
+          className="flex-1 border rounded-lg px-4 py-2 text-sm dark:bg-zinc-800 dark:border-zinc-600"
+          placeholder="Ask the agent something..."
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+        />
         <button
-          onClick={savePolicies}
-          disabled={saving}
-          className="mt-3 bg-blue-600 text-white px-5 py-2 rounded-lg text-sm disabled:opacity-50 hover:bg-blue-700 transition-colors"
+          onClick={sendMessage}
+          disabled={loading}
+          className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50"
         >
-          {saving ? "Saving..." : saved ? "✓ Saved!" : "Save Changes"}
+          Send
         </button>
-      </section>
-
-      {/* Audit Log */}
-      <section>
-        <h2 className="text-lg font-semibold mb-3">
-          Live Audit Log
-          <span className="ml-2 text-xs text-zinc-400">(refreshes every 3s)</span>
-        </h2>
-        <div className="rounded-lg border border-zinc-700 overflow-hidden max-h-72 overflow-y-auto">
-          {auditLog.length === 0 ? (
-            <p className="text-zinc-500 text-sm p-4">
-              No audit entries yet. Try chatting with the agent.
-            </p>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-zinc-800 text-zinc-400 sticky top-0">
-                <tr>
-                  <th className="text-left px-4 py-3">Time</th>
-                  <th className="text-left px-4 py-3">Provider</th>
-                  <th className="text-left px-4 py-3">Action</th>
-                  <th className="text-left px-4 py-3">Resource</th>
-                  <th className="text-left px-4 py-3">Decision</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-700">
-                {[...auditLog].reverse().map((entry, i) => (
-                  <tr key={i} className="bg-zinc-900">
-                    <td className="px-4 py-2 text-zinc-400 text-xs">
-                      {new Date(entry.timestamp).toLocaleTimeString()}
-                    </td>
-                    <td className="px-4 py-2 font-mono">{entry.provider}</td>
-                    <td className="px-4 py-2 font-mono">{entry.action}</td>
-                    <td className="px-4 py-2 font-mono">{entry.resource}</td>
-                    <td className="px-4 py-2">
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          DECISION_STYLES[entry.decision as Decision] ??
-                          "bg-zinc-600 text-white"
-                        }`}
-                      >
-                        {entry.decision}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </section>
-
-      <p className="text-xs text-zinc-500">
-        Changes to policies take effect immediately on the next agent tool call.
-      </p>
+      </div>
     </main>
   );
 }
