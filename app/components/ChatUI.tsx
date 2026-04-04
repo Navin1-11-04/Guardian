@@ -71,6 +71,9 @@ export default function ChatUI({ user }: { user: User }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [sheetTab, setSheetTab] = useState<"policies" | "audit">("policies");
+  const [stepUpRequired, setStepUpRequired] = useState(false);
+  const [stepUpMessage, setStepUpMessage] = useState("");
+  const [pendingMessage, setPendingMessage] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -128,6 +131,26 @@ export default function ChatUI({ user }: { user: User }) {
         body: JSON.stringify({ message: userMessage }),
       });
       const data = await res.json();
+
+      // Handle step-up authentication requirement
+      if (data.step_up_required) {
+        setStepUpRequired(true);
+        setStepUpMessage(
+          data.message || "This action requires additional authentication",
+        );
+        setPendingMessage(userMessage);
+        setMessages((prev) =>
+          prev.slice(0, -1).concat([
+            {
+              role: "assistant",
+              content: `🔐 ${data.message || "Step-up authentication required"}. Check your authentication settings.`,
+            },
+          ]),
+        );
+        setLoading(false);
+        return;
+      }
+
       setMessages((prev) => [
         ...prev,
         {
@@ -143,6 +166,16 @@ export default function ChatUI({ user }: { user: User }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleStepUpApprove() {
+    setStepUpRequired(false);
+    // In a real implementation, this would trigger Auth0's step-up auth
+    // For now, we'll just retry the same message
+    setInput(pendingMessage);
+    setTimeout(() => {
+      sendMessage();
+    }, 100);
   }
 
   function handleTextareaChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
@@ -494,7 +527,7 @@ export default function ChatUI({ user }: { user: User }) {
                         />
 
                         {/* TIME */}
-                        <span className="text-xs text-foreground/70 font-mono w-[65px] shrink-0">
+                        <span className="text-xs text-foreground/70 font-mono w-16.5 shrink-0">
                           {new Date(entry.timestamp).toLocaleTimeString([], {
                             hour: "2-digit",
                             minute: "2-digit",
@@ -577,6 +610,44 @@ export default function ChatUI({ user }: { user: User }) {
           </div>
         </div>
       </div>
+
+      {/* STEP-UP AUTH MODAL */}
+      {stepUpRequired && (
+        <>
+          <div
+            className="fixed inset-0 bg-foreground/20 z-9999 backdrop-blur-sm"
+            onClick={() => setStepUpRequired(false)}
+          />
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-9999 bg-background border border-foreground/10 rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4">
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-12 h-12 rounded-full bg-yellow-500/20 flex items-center justify-center">
+                <Shield size={24} className="text-yellow-500" />
+              </div>
+            </div>
+            <h2 className="text-center font-semibold text-lg mb-2">
+              Step-Up Authentication Required
+            </h2>
+            <p className="text-center text-sm text-foreground/60 mb-6">
+              {stepUpMessage ||
+                "This sensitive action requires you to authenticate again."}
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setStepUpRequired(false)}
+                className="flex-1 px-4 py-2 rounded-lg border border-foreground/20 text-sm font-medium text-foreground/70 hover:bg-foreground/5 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleStepUpApprove}
+                className="flex-1 px-4 py-2 rounded-lg bg-yellow-500/20 border border-yellow-500/30 text-sm font-medium text-yellow-500 hover:bg-yellow-500/30 transition-colors cursor-pointer"
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       <style>{`
         @keyframes bounce {
