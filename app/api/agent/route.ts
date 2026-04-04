@@ -57,7 +57,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ reply: "No response from agent" });
 
   } catch (error: any) {
-    console.error("Agent error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  console.error("Agent error FULL:", error?.message);
+  console.error("Agent error STACK:", error?.stack);
+  return NextResponse.json({ error: error.message }, { status: 500 });
+}
 }
