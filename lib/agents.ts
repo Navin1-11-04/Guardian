@@ -1,6 +1,6 @@
-import { ChatGroq } from "@langchain/groq";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { guardedTool } from "./guardian/firewall";
+import { ChatOpenAI } from "@langchain/openai";
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import { z } from "zod";
 import { Octokit } from "octokit";
@@ -10,7 +10,10 @@ import {
   createGoogleDocument,
 } from "./guardian/google-drive";
 
-const model = new ChatGroq({ model: "llama-3.3-70b-versatile" });
+const model = new ChatOpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  model: "gpt-3.5-turbo"
+});
 
 const listRepositoriesTool = new DynamicStructuredTool({
   name: "list_repositories",
