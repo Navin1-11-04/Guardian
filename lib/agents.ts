@@ -1,37 +1,18 @@
-import { ChatOpenAI } from "@langchain/openai";
+import { ChatGroq } from "@langchain/groq";
 import { createReactAgent } from "@langchain/langgraph/prebuilt";
 import { guardedTool } from "./guardian/firewall";
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import { z } from "zod";
 import { Octokit } from "octokit";
 
-// ─────────────────────────────────────────────
-// Model
-// ─────────────────────────────────────────────
-const model = new ChatOpenAI({
-  apiKey: process.env.OPENROUTER_API_KEY,
-  configuration: {
-    baseURL: "https://openrouter.ai/api/v1",
-    defaultHeaders: {
-      "HTTP-Referer": "http://localhost:3000",
-      "X-Title": "Guardian AI Agent",
-    },
-  },
-  model: "meta-llama/llama-3-8b-instruct",
-  temperature: 0.1,
-});
+const model = new ChatGroq({ model: "llama-3.3-70b-versatile" });
 
-// ─────────────────────────────────────────────
-// Shared Octokit factory
-// ─────────────────────────────────────────────
 const getOctokit = () => new Octokit({ auth: process.env.GITHUB_PAT });
 
-// ─────────────────────────────────────────────
-// Repo owner cache
-// ─────────────────────────────────────────────
+// ── Owner cache ──
 const repoOwnerCache = new Map<string, string>();
 
-function cacheRepoOwners(repos: Array<{ name: string; url: string }>) {
+function cacheRepos(repos: Array<{ name: string; url: string }>) {
   for (const r of repos) {
     const parts = r.url.split("/");
     const owner = parts[parts.length - 2];
@@ -39,111 +20,52 @@ function cacheRepoOwners(repos: Array<{ name: string; url: string }>) {
   }
 }
 
-function lookupOwner(repoName: string): string | undefined {
-  return repoOwnerCache.get(repoName.toLowerCase());
-}
-
-async function ensureCachePopulated(): Promise<void> {
-  if (repoOwnerCache.size > 0) return;
-  const octokit = getOctokit();
-  const { data } = await octokit.rest.repos.listForAuthenticatedUser({
-    visibility: "all",
-    per_page: 100,
-    sort: "updated",
-  });
-  cacheRepoOwners(data.map((r) => ({ name: r.name, url: r.html_url })));
-}
-
 async function resolveOwner(repoName: string): Promise<{ owner: string; repo: string }> {
-  await ensureCachePopulated();
-  const exact = lookupOwner(repoName);
-  if (exact) return { owner: exact, repo: repoName };
-  const fuzzy = [...repoOwnerCache.entries()].find(([name]) =>
-    name.includes(repoName.toLowerCase())
-  );
-  if (fuzzy) return { owner: fuzzy[1], repo: fuzzy[0] };
-  throw new Error(`No repository matching "${repoName}" found in your account.`);
-}
+  // Populate cache if empty
+  if (repoOwnerCache.size === 0) {
+    const { data } = await getOctokit().rest.repos.listForAuthenticatedUser({
+      visibility: "all", per_page: 100,
+    });
+    cacheRepos(data.map(r => ({ name: r.name, url: r.html_url })));
+  }
 
-// ─────────────────────────────────────────────
-// Result helpers
-// ─────────────────────────────────────────────
-interface StructuredResult<T> {
-  ok: boolean;
-  count?: number;
-  data?: T;
-  error?: string;
+  const key = repoName.toLowerCase();
+  const exact = repoOwnerCache.get(key);
+  if (exact) return { owner: exact, repo: repoName };
+
+  // Fuzzy match
+  for (const [name, owner] of repoOwnerCache.entries()) {
+    if (name.includes(key) || key.includes(name)) {
+      return { owner, repo: name };
+    }
+  }
+
+  throw new Error(`Repository "${repoName}" not found in your account.`);
 }
 
 function ok<T>(data: T, count?: number): string {
-  const result: StructuredResult<T> = { ok: true, data, ...(count !== undefined && { count }) };
-  return JSON.stringify(result);
+  return JSON.stringify({ ok: true, data, ...(count !== undefined && { count }) });
 }
 
 function fail(error: string): string {
-  return JSON.stringify({ ok: false, error } satisfies StructuredResult<never>);
+  return JSON.stringify({ ok: false, error });
 }
 
-// ─────────────────────────────────────────────
-// FIX 1 — wrapGuarded
-// Converts firewall "Blocked: ..." plain-text strings into structured
-// fail() JSON so the LLM gets a clear signal and tells the user to
-// update their policies — instead of hanging in an infinite loop.
-// ─────────────────────────────────────────────
-function wrapGuarded(tool: DynamicStructuredTool): DynamicStructuredTool {
-  const originalFunc = tool.func.bind(tool);
-  // @ts-ignore
-  tool.func = async (...args: any[]) => {
-    const result = await originalFunc(...args);
-    if (
-      typeof result === "string" &&
-      (result.toLowerCase().startsWith("blocked:") ||
-        result.toLowerCase().includes("access denied") ||
-        result.toLowerCase().includes("not permitted") ||
-        result.toLowerCase().includes("security polic"))
-    ) {
-      return fail(
-        `POLICY_BLOCKED: This action is blocked by your current Guardian security policy. ` +
-        `Open "Policies & Audit" and set the relevant rule to "allow" to enable it.`
-      );
-    }
-    return result;
-  };
-  return tool;
-}
-
-// ─────────────────────────────────────────────
-// Pending delete store
-// ─────────────────────────────────────────────
-const pendingDeletes = new Map<string, { owner: string; repo: string; expiresAt: number }>();
-const DELETE_TTL_MS = 60_000;
-function deletionKey(owner: string, repo: string) { return `${owner}/${repo}`; }
-
-// ─────────────────────────────────────────────
-// Tool 1: List Repositories
-// ─────────────────────────────────────────────
+// ── Tool 1: List Repositories ──
 const listRepositoriesTool = new DynamicStructuredTool({
   name: "list_repositories",
-  description: `List the authenticated user's GitHub repositories.
-Use 'visibility' to filter: "all" (default), "public", or "private".
-Use 'since_days' to filter repos updated within the last N days.
-Use 'limit' to cap results (default 20).`,
+  description: "List the authenticated user's GitHub repositories. Filter by visibility: all, public, private.",
   schema: z.object({
     visibility: z.enum(["all", "public", "private"]).default("all"),
-    since_days: z.number().optional(),
     limit: z.number().default(20),
-    sort: z.enum(["updated", "created", "pushed", "full_name"]).default("updated"),
   }),
-  func: async ({ visibility, since_days, limit, sort }) => {
+  func: async ({ visibility, limit }) => {
     try {
-      const octokit = getOctokit();
-      const { data } = await octokit.rest.repos.listForAuthenticatedUser({
-        visibility, sort, per_page: 100, direction: "desc",
+      const { data } = await getOctokit().rest.repos.listForAuthenticatedUser({
+        visibility, sort: "updated", per_page: 100, direction: "desc",
       });
-
-      cacheRepoOwners(data.map((r) => ({ name: r.name, url: r.html_url })));
-
-      let repos = data.map((r) => ({
+      cacheRepos(data.map(r => ({ name: r.name, url: r.html_url })));
+      const repos = data.slice(0, limit).map(r => ({
         name: r.name,
         private: r.private,
         url: r.html_url,
@@ -151,13 +73,6 @@ Use 'limit' to cap results (default 20).`,
         updated_at: r.updated_at ?? null,
         stars: r.stargazers_count ?? 0,
       }));
-
-      if (since_days !== undefined) {
-        const cutoff = Date.now() - since_days * 86_400_000;
-        repos = repos.filter((r) => r.updated_at && new Date(r.updated_at).getTime() >= cutoff);
-      }
-
-      repos = repos.slice(0, limit);
       return ok(repos, repos.length);
     } catch (err: any) {
       return fail(err.message);
@@ -165,98 +80,76 @@ Use 'limit' to cap results (default 20).`,
   },
 });
 
-// ─────────────────────────────────────────────
-// Tool 2: Resolve Repo Owner
-// ─────────────────────────────────────────────
-const resolveRepoTool = new DynamicStructuredTool({
-  name: "resolve_repo_owner",
-  description: `Resolve the correct owner for a GitHub repository by name.
-Call this whenever the user mentions a repo by name only.`,
+// ── Tool 2: Get Repo Details ──
+const getRepoDetailsTool = new DynamicStructuredTool({
+  name: "get_repository_details",
+  description: "Get full details about a single GitHub repository including description, issues count, branches, contributors, and more.",
   schema: z.object({
-    repo: z.string().describe("Repository name to look up (case-insensitive)"),
+    repo: z.string().describe("Repository name"),
   }),
   func: async ({ repo }) => {
     try {
-      const resolved = await resolveOwner(repo);
-      return ok({ ...resolved, source: "resolved" });
-    } catch (err: any) {
-      return fail(err.message);
-    }
-  },
-});
-
-// ─────────────────────────────────────────────
-// Tool 3: Get Repository Details
-// ─────────────────────────────────────────────
-const getRepoDetailsTool = new DynamicStructuredTool({
-  name: "get_repository_details",
-  description: `Get detailed info about a single GitHub repository.`,
-  schema: z.object({
-    owner: z.string().describe("Repository owner username"),
-    repo: z.string().describe("Repository name"),
-  }),
-  func: async ({ owner, repo }) => {
-    let resolvedOwner = owner;
-    let resolvedRepo = repo;
-    try {
-      const fromCache = await resolveOwner(repo);
-      resolvedOwner = fromCache.owner;
-      resolvedRepo = fromCache.repo;
-    } catch { /* proceed with provided owner */ }
-
-    try {
+      const { owner, repo: resolvedRepo } = await resolveOwner(repo);
       const octokit = getOctokit();
-      const { data: r } = await octokit.rest.repos.get({ owner: resolvedOwner, repo: resolvedRepo });
+
+      const [repoRes, issuesRes, branchesRes] = await Promise.all([
+        octokit.rest.repos.get({ owner, repo: resolvedRepo }),
+        octokit.rest.issues.listForRepo({ owner, repo: resolvedRepo, state: "open", per_page: 5 }),
+        octokit.rest.repos.listBranches({ owner, repo: resolvedRepo, per_page: 5 }),
+      ]);
+
+      const r = repoRes.data;
       return ok({
-        name: r.name, owner: r.owner.login, private: r.private,
-        url: r.html_url, description: r.description, language: r.language,
-        stars: r.stargazers_count, open_issues: r.open_issues_count,
-        updated_at: r.updated_at, default_branch: r.default_branch,
+        name: r.name,
+        owner: r.owner.login,
+        private: r.private,
+        url: r.html_url,
+        description: r.description ?? "No description",
+        language: r.language ?? null,
+        stars: r.stargazers_count,
+        forks: r.forks_count,
+        watchers: r.watchers_count,
+        open_issues: r.open_issues_count,
+        default_branch: r.default_branch,
+        updated_at: r.updated_at,
+        created_at: r.created_at,
+        topics: r.topics ?? [],
+        license: r.license?.name ?? null,
+        recent_issues: issuesRes.data.map(i => ({
+          number: i.number,
+          title: i.title,
+          url: i.html_url,
+        })),
+        branches: branchesRes.data.map(b => b.name),
       });
     } catch (err: any) {
-      if (err.status === 404) return fail(`Repository "${resolvedOwner}/${resolvedRepo}" not found.`);
       return fail(err.message);
     }
   },
 });
 
-// ─────────────────────────────────────────────
-// Tool 4: List Issues
-// FIX 2 — Explicitly returns count: 0 with empty array so the LLM
-// always has a signal to say "no issues" instead of silently hanging.
-// ─────────────────────────────────────────────
+// ── Tool 3: List Issues ──
 const listIssuesTool = new DynamicStructuredTool({
   name: "list_issues",
-  description: `List issues for a GitHub repository.
-Filter by state: "open" (default), "closed", or "all".
-IMPORTANT: If the result has count: 0, you MUST tell the user there are no issues. Never be silent.`,
+  description: "List issues for a GitHub repository.",
   schema: z.object({
-    owner: z.string(),
-    repo: z.string(),
+    repo: z.string().describe("Repository name"),
     state: z.enum(["open", "closed", "all"]).default("open"),
     limit: z.number().default(10),
   }),
-  func: async ({ owner, repo, state, limit }) => {
-    let resolvedOwner = owner;
-    let resolvedRepo = repo;
+  func: async ({ repo, state, limit }) => {
     try {
-      const resolved = await resolveOwner(repo);
-      resolvedOwner = resolved.owner;
-      resolvedRepo = resolved.repo;
-    } catch { /* proceed */ }
-
-    try {
-      const octokit = getOctokit();
-      const { data } = await octokit.rest.issues.listForRepo({
-        owner: resolvedOwner, repo: resolvedRepo, state, per_page: limit,
+      const { owner, repo: resolvedRepo } = await resolveOwner(repo);
+      const { data } = await getOctokit().rest.issues.listForRepo({
+        owner, repo: resolvedRepo, state, per_page: limit,
       });
-
-      const issues = data.map((i) => ({
-        number: i.number, title: i.title, state: i.state,
-        url: i.html_url, created_at: i.created_at,
+      const issues = data.map(i => ({
+        number: i.number,
+        title: i.title,
+        state: i.state,
+        url: i.html_url,
+        created_at: i.created_at,
       }));
-
-      // Always include count — 0 is a valid, meaningful result
       return ok(issues, issues.length);
     } catch (err: any) {
       return fail(err.message);
@@ -264,70 +157,47 @@ IMPORTANT: If the result has count: 0, you MUST tell the user there are no issue
   },
 });
 
-// ─────────────────────────────────────────────
-// Tool 5: Create Issue
-// ─────────────────────────────────────────────
+// ── Tool 4: Create Issue ──
 const createIssueTool = new DynamicStructuredTool({
   name: "create_github_issue",
-  description: `Create a GitHub issue in a repository.`,
+  description: "Create a GitHub issue in a repository.",
   schema: z.object({
-    owner: z.string(),
-    repo: z.string(),
-    title: z.string(),
-    body: z.string().optional(),
-    labels: z.array(z.string()).optional(),
+    repo: z.string().describe("Repository name"),
+    title: z.string().describe("Issue title"),
+    body: z.string().optional().describe("Issue body"),
   }),
-  func: async ({ owner, repo, title, body, labels }) => {
-    let resolvedOwner = owner;
-    let resolvedRepo = repo;
+  func: async ({ repo, title, body }) => {
     try {
-      const resolved = await resolveOwner(repo);
-      resolvedOwner = resolved.owner;
-      resolvedRepo = resolved.repo;
-    } catch { /* proceed */ }
-
-    try {
-      const octokit = getOctokit();
-      const { data } = await octokit.rest.issues.create({
-        owner: resolvedOwner, repo: resolvedRepo,
-        title, body: body ?? "", labels: labels ?? [],
+      const { owner, repo: resolvedRepo } = await resolveOwner(repo);
+      const { data } = await getOctokit().rest.issues.create({
+        owner, repo: resolvedRepo, title, body: body ?? "",
       });
-      return ok({ number: data.number, title: data.title, url: data.html_url, state: data.state });
+      return ok({
+        number: data.number,
+        title: data.title,
+        url: data.html_url,
+        state: data.state,
+      });
     } catch (err: any) {
       return fail(err.message);
     }
   },
 });
 
-// ─────────────────────────────────────────────
-// Tool 6 (NEW): Close Issue
-// FIX 3 — Was completely missing. Adds support for "close issue" commands.
-// If the user gives a title, the LLM should call list_issues first to
-// find the number, then call this tool.
-// ─────────────────────────────────────────────
+// ── Tool 5: Close Issue ──
 const closeIssueTool = new DynamicStructuredTool({
   name: "close_github_issue",
-  description: `Close an open GitHub issue by its number.
-Use when user says "close issue #N" or "close the [title] issue".
-If the user gives a title instead of a number, call list_issues first to find the number.`,
+  description: "Close an open GitHub issue by its number.",
   schema: z.object({
-    owner: z.string().describe("Repository owner username"),
     repo: z.string().describe("Repository name"),
     issue_number: z.number().describe("The issue number to close"),
   }),
-  func: async ({ owner, repo, issue_number }) => {
-    let resolvedOwner = owner;
-    let resolvedRepo = repo;
+  func: async ({ repo, issue_number }) => {
     try {
-      const resolved = await resolveOwner(repo);
-      resolvedOwner = resolved.owner;
-      resolvedRepo = resolved.repo;
-    } catch { /* proceed */ }
-
-    try {
-      const octokit = getOctokit();
-      const { data } = await octokit.rest.issues.update({
-        owner: resolvedOwner,
+      const { owner, repo: resolvedRepo } = await resolveOwner(repo);
+      console.log(`Closing issue #${issue_number} in ${owner}/${resolvedRepo}`);
+      const { data } = await getOctokit().rest.issues.update({
+        owner,
         repo: resolvedRepo,
         issue_number,
         state: "closed",
@@ -340,134 +210,57 @@ If the user gives a title instead of a number, call list_issues first to find th
         closed: true,
       });
     } catch (err: any) {
-      if (err.status === 404) return fail(`Issue #${issue_number} not found in "${resolvedOwner}/${resolvedRepo}".`);
       return fail(err.message);
     }
   },
 });
 
-// ─────────────────────────────────────────────
-// Tool 7: Request Delete Confirmation
-// ─────────────────────────────────────────────
-const requestDeleteConfirmationTool = new DynamicStructuredTool({
-  name: "request_delete_confirmation",
-  description: `⚠️ ALWAYS call this FIRST before deleting any repository.`,
-  schema: z.object({
-    owner: z.string(),
-    repo: z.string(),
-  }),
-  func: async ({ owner, repo }) => {
-    let resolvedOwner = owner;
-    let resolvedRepo = repo;
-    try {
-      const resolved = await resolveOwner(repo);
-      resolvedOwner = resolved.owner;
-      resolvedRepo = resolved.repo;
-    } catch { /* proceed */ }
-
-    const key = deletionKey(resolvedOwner, resolvedRepo);
-    pendingDeletes.set(key, { owner: resolvedOwner, repo: resolvedRepo, expiresAt: Date.now() + DELETE_TTL_MS });
-
-    return ok({
-      confirmation_required: true,
-      message: `⚠️ You are about to permanently delete "${resolvedOwner}/${resolvedRepo}". This cannot be undone.`,
-      instruction: `To confirm, call delete_repository with confirmed: true. Expires in 60 seconds.`,
-      repo: `${resolvedOwner}/${resolvedRepo}`,
-    });
-  },
-});
-
-// ─────────────────────────────────────────────
-// Tool 8: Delete Repository
-// ─────────────────────────────────────────────
+// ── Tool 6: Delete Repo ──
 const deleteRepoTool = new DynamicStructuredTool({
   name: "delete_repository",
-  description: `Permanently delete a GitHub repository. Must call request_delete_confirmation first.`,
+  description: "Permanently delete a GitHub repository. Always warn user first.",
   schema: z.object({
-    owner: z.string(),
-    repo: z.string(),
-    confirmed: z.boolean(),
+    repo: z.string().describe("Repository name"),
   }),
-  func: async ({ owner, repo, confirmed }) => {
-    if (!confirmed) return fail("Deletion blocked: call request_delete_confirmation first.");
-
-    let resolvedOwner = owner;
-    let resolvedRepo = repo;
+  func: async ({ repo }) => {
     try {
-      const resolved = await resolveOwner(repo);
-      resolvedOwner = resolved.owner;
-      resolvedRepo = resolved.repo;
-    } catch { /* proceed */ }
-
-    const key = deletionKey(resolvedOwner, resolvedRepo);
-    const pending = pendingDeletes.get(key);
-
-    if (!pending) return fail(`No pending confirmation for "${resolvedOwner}/${resolvedRepo}".`);
-    if (Date.now() > pending.expiresAt) {
-      pendingDeletes.delete(key);
-      return fail(`Confirmation expired for "${resolvedOwner}/${resolvedRepo}". Request again.`);
-    }
-
-    try {
-      const octokit = getOctokit();
-      await octokit.rest.repos.delete({ owner: resolvedOwner, repo: resolvedRepo });
-      pendingDeletes.delete(key);
-      return ok({ deleted: true, repo: `${resolvedOwner}/${resolvedRepo}`, message: `Repository "${resolvedRepo}" permanently deleted.` });
+      const { owner, repo: resolvedRepo } = await resolveOwner(repo);
+      await getOctokit().rest.repos.delete({ owner, repo: resolvedRepo });
+      return ok({ deleted: true, repo: `${owner}/${resolvedRepo}`, message: `Repository permanently deleted.` });
     } catch (err: any) {
       return fail(err.message);
     }
   },
 });
 
-// ─────────────────────────────────────────────
-// Guarded + wrapped tools
-// wrapGuarded converts firewall blocks into structured errors (Fix 1)
-// ─────────────────────────────────────────────
 const tools = [
-  wrapGuarded(guardedTool(listRepositoriesTool,          { provider: "github", action: "read",   resource: "repos"  })),
-  wrapGuarded(guardedTool(resolveRepoTool,               { provider: "github", action: "read",   resource: "repos"  })),
-  wrapGuarded(guardedTool(getRepoDetailsTool,            { provider: "github", action: "read",   resource: "repos"  })),
-  wrapGuarded(guardedTool(listIssuesTool,                { provider: "github", action: "read",   resource: "issues" })),
-  wrapGuarded(guardedTool(createIssueTool,               { provider: "github", action: "write",  resource: "issues" })),
-  wrapGuarded(guardedTool(closeIssueTool,                { provider: "github", action: "write",  resource: "issues" })),
-  wrapGuarded(guardedTool(requestDeleteConfirmationTool, { provider: "github", action: "delete", resource: "repos"  })),
-  wrapGuarded(guardedTool(deleteRepoTool,                { provider: "github", action: "delete", resource: "repos"  })),
+  guardedTool(listRepositoriesTool,  { provider: "github", action: "read",   resource: "repos"  }),
+  guardedTool(getRepoDetailsTool,    { provider: "github", action: "read",   resource: "repos"  }),
+  guardedTool(listIssuesTool,        { provider: "github", action: "read",   resource: "issues" }),
+  guardedTool(createIssueTool,       { provider: "github", action: "write",  resource: "issues" }),
+  guardedTool(closeIssueTool,        { provider: "github", action: "write",  resource: "issues" }),
+  guardedTool(deleteRepoTool,        { provider: "github", action: "delete", resource: "repos"  }),
 ];
 
-// ─────────────────────────────────────────────
-// System prompt
-// ─────────────────────────────────────────────
-const SYSTEM_PROMPT = `You are a GitHub assistant with access to the user's repositories and issues.
+const SYSTEM_PROMPT = `You are a GitHub assistant secured by Guardian AI Firewall.
 
-## POLICY BLOCKS — CRITICAL RULE
-If any tool returns an error containing "POLICY_BLOCKED", you MUST immediately stop and reply:
-"This action is blocked by your Guardian security policy. Open **Policies & Audit** and set the relevant rule to **allow** to enable it."
-Do NOT retry. Do NOT call any other tools. Just reply once and stop.
+## TOOLS
+- list_repositories: list user repos
+- get_repository_details: full details on one repo (pass repo name only)
+- list_issues: list issues on a repo (pass repo name only)
+- create_github_issue: create an issue (pass repo name only)
+- close_github_issue: close an issue by number (pass repo name only + issue_number)
+- delete_repository: delete a repo (warn user, requires policy allow)
 
-## EMPTY RESULTS — CRITICAL RULE
-If list_issues returns count: 0 or an empty array, you MUST reply with a plain-English message like:
-"There are no open issues on [repo] right now."
-Never stay silent when a list is empty.
+## RULES
+- ALWAYS pass just the repo name — the tools resolve the owner automatically
+- If blocked by policy, say exactly: "This action is blocked by your Guardian security policy."
+- If step-up required, stop and say authentication is required
+- Keep responses concise — one sentence + data
 
-## OWNER RESOLUTION
-- Always call resolve_repo_owner first when user mentions a repo by name only.
-- Use returned { owner, repo } in all subsequent calls.
-
-## CLOSE ISSUE FLOW
-User gives a title → list_issues to find the number → close_github_issue({ owner, repo, issue_number })
-User gives a number → resolve_repo_owner → close_github_issue directly
-
-## DELETE FLOW — MANDATORY TWO STEPS
-1. request_delete_confirmation → show warning
-2. Wait for explicit user "yes" / "confirm"
-3. delete_repository with confirmed: true
-
-## OUTPUT FORMAT — MANDATORY
-1. One short human sentence
-2. Raw JSON on a new line (skip JSON for errors, policy blocks, and empty results — plain English only)
-
-Never output only JSON. Never describe the JSON. One sentence max for the human part.`;
-
+## OUTPUT FORMAT
+One short sentence, then raw JSON on next line if there is data to show.
+Never describe the JSON structure.`;
 
 export const agent = createReactAgent({
   llm: model,

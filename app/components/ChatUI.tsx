@@ -77,6 +77,13 @@ interface RepoDetails extends RepoItem {
   description: string | null;
   open_issues: number;
   default_branch: string;
+  forks: number;
+  watchers: number;
+  created_at: string;
+  topics: string[];
+  license: string | null;
+  recent_issues: Array<{ number: number; title: string; url: string }>;
+  branches: string[];
 }
 
 interface IssueItem {
@@ -262,43 +269,94 @@ function RepoCard({ repo }: { repo: RepoItem }) {
     </a>
   );
 }
-
 function RepoDetailsCard({ data }: { data: RepoDetails }) {
   return (
     <div className="rounded-xl border border-foreground/10 overflow-hidden">
+      {/* Header */}
       <div className="px-4 py-3 border-b border-foreground/10 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          {data.private ? (
-            <Lock size={13} className="text-amber-400" />
-          ) : (
-            <Unlock size={13} className="text-emerald-400" />
-          )}
+          {data.private
+            ? <Lock size={13} className="text-amber-400" />
+            : <Unlock size={13} className="text-emerald-400" />}
           <span className="font-semibold text-sm">{data.owner}/{data.name}</span>
+          {data.license && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-foreground/5 text-foreground/40 border border-foreground/10">
+              {data.license}
+            </span>
+          )}
         </div>
         <a href={data.url} target="_blank" rel="noopener noreferrer">
           <ExternalLink size={13} className="text-foreground/40 hover:text-foreground/80" />
         </a>
       </div>
-      {data.description && (
-        <div className="px-4 py-2 text-xs text-foreground/60 border-b border-foreground/5">
+
+      {/* Description */}
+      {data.description && data.description !== "No description" && (
+        <div className="px-4 py-2.5 text-xs text-foreground/60 border-b border-foreground/5 leading-relaxed">
           {data.description}
         </div>
       )}
-      <div className="px-4 py-3 grid grid-cols-2 gap-3">
+
+      {/* Topics */}
+      {data.topics && data.topics.length > 0 && (
+        <div className="px-4 py-2 flex flex-wrap gap-1.5 border-b border-foreground/5">
+          {data.topics.map((t: string) => (
+            <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
+              {t}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Stats grid */}
+      <div className="px-4 py-3 grid grid-cols-2 gap-2.5">
         {[
           { icon: <Code2 size={12} />, label: "Language", value: data.language ?? "—" },
-          { icon: <GitBranch size={12} />, label: "Branch", value: data.default_branch },
+          { icon: <GitBranch size={12} />, label: "Default branch", value: data.default_branch },
           { icon: <CircleDot size={12} />, label: "Open issues", value: String(data.open_issues) },
-          { icon: <Calendar size={12} />, label: "Updated", value: timeAgo(data.updated_at) },
           { icon: <Star size={12} />, label: "Stars", value: String(data.stars) },
+          { icon: <Hash size={12} />, label: "Forks", value: String((data as any).forks ?? 0) },
+          { icon: <Calendar size={12} />, label: "Last updated", value: timeAgo(data.updated_at) },
+          { icon: <Calendar size={12} />, label: "Created", value: timeAgo((data as any).created_at) },
         ].map(({ icon, label, value }) => (
-          <div key={label} className="flex items-center gap-2 text-xs text-foreground/60">
+          <div key={label} className="flex items-center gap-2 text-xs">
             <span className="text-foreground/30">{icon}</span>
             <span className="text-foreground/40">{label}:</span>
             <span className="text-foreground/80 font-medium">{value}</span>
           </div>
         ))}
       </div>
+
+      {/* Branches */}
+      {(data as any).branches?.length > 0 && (
+        <div className="px-4 py-2.5 border-t border-foreground/5">
+          <div className="text-[10px] text-foreground/30 uppercase tracking-wider mb-1.5">Branches</div>
+          <div className="flex flex-wrap gap-1.5">
+            {(data as any).branches.map((b: string) => (
+              <span key={b} className="text-[10px] px-2 py-0.5 rounded bg-foreground/5 text-foreground/50 border border-foreground/10 font-mono">
+                {b}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Recent issues */}
+      {(data as any).recent_issues?.length > 0 && (
+        <div className="px-4 py-2.5 border-t border-foreground/5">
+          <div className="text-[10px] text-foreground/30 uppercase tracking-wider mb-1.5">Recent open issues</div>
+          <div className="flex flex-col gap-1">
+            {(data as any).recent_issues.map((issue: any) => (
+              <a key={issue.number} href={issue.url} target="_blank" rel="noopener noreferrer"
+                className="flex items-center gap-2 text-xs text-foreground/50 hover:text-foreground/80 transition-colors">
+                <CircleDot size={10} className="text-emerald-400 shrink-0" />
+                <span className="truncate">{issue.title}</span>
+                <span className="text-foreground/30 shrink-0">#{issue.number}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

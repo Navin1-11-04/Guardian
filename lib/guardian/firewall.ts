@@ -27,9 +27,12 @@ export function guardedTool(
       }
 
       if (decision === "step-up") {
-        throw new TokenVaultError(
-          `Auth required for ${provider}/${resource}`
-        );
+        // Return formatted error that route can detect
+        return JSON.stringify({ 
+          ok: false, 
+          error: `Auth required for ${provider}/${resource}`,
+          stepUpRequired: true 
+        });
       }
 
       // ✅ pass config properly
