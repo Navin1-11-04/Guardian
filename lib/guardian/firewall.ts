@@ -6,7 +6,7 @@ import { tool, DynamicStructuredTool } from "@langchain/core/tools";
 
 export function guardedTool(
   baseTool: DynamicStructuredTool,
-  meta: { provider: Provider; action: Action; resource: string }
+  meta: { provider: Provider; action: Action; resource: string },
 ) {
   const { provider, action, resource } = meta;
 
@@ -27,10 +27,10 @@ export function guardedTool(
       }
 
       if (decision === "step-up") {
-        return JSON.stringify({ 
-          ok: false, 
+        return JSON.stringify({
+          ok: false,
           error: `Auth required for ${provider}/${resource}`,
-          stepUpRequired: true 
+          stepUpRequired: true,
         });
       }
 
@@ -40,6 +40,6 @@ export function guardedTool(
       name: baseTool.name,
       description: baseTool.description,
       schema: baseTool.schema ?? z.object({}),
-    }
+    },
   );
 }
