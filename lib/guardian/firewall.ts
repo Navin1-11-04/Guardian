@@ -27,7 +27,6 @@ export function guardedTool(
       }
 
       if (decision === "step-up") {
-        // Return formatted error that route can detect
         return JSON.stringify({ 
           ok: false, 
           error: `Auth required for ${provider}/${resource}`,
@@ -35,7 +34,6 @@ export function guardedTool(
         });
       }
 
-      // ✅ pass config properly
       return await (baseTool as any).func(input, config);
     },
     {

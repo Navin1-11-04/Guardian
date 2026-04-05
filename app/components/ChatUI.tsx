@@ -22,9 +22,7 @@ import {
   ShieldOff,
 } from "lucide-react";
 
-// ─────────────────────────────────────────────
 // Core types
-// ─────────────────────────────────────────────
 interface Message {
   role: "user" | "assistant";
   content: string;
@@ -53,9 +51,7 @@ interface User {
   nickname?: string;
 }
 
-// ─────────────────────────────────────────────
 // Agent response shape types
-// ─────────────────────────────────────────────
 interface AgentEnvelope {
   ok: boolean;
   count?: number;
@@ -120,9 +116,7 @@ interface ResolvedRepo {
   source: string;
 }
 
-// ─────────────────────────────────────────────
 // Helpers
-// ─────────────────────────────────────────────
 const LANG_COLORS: Record<string, string> = {
   TypeScript: "#3178c6",
   JavaScript: "#f1e05a",
@@ -148,9 +142,7 @@ function timeAgo(iso: string | null) {
   return `${Math.floor(d / 365)}y ago`;
 }
 
-// ─────────────────────────────────────────────
 // Type guards
-// ─────────────────────────────────────────────
 function isRepoArray(data: unknown): data is RepoItem[] {
   return (
     Array.isArray(data) &&
@@ -221,9 +213,7 @@ function isBlockedMessage(text: string): boolean {
   );
 }
 
-// ─────────────────────────────────────────────
 // Card components
-// ─────────────────────────────────────────────
 function RepoCard({ repo }: { repo: RepoItem }) {
   return (
     <a

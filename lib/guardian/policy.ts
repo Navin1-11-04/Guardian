@@ -10,22 +10,53 @@ export interface PolicyRule {
 }
 
 const DEFAULT_POLICIES: PolicyRule[] = [
-  { id: "1", provider: "github", action: "read",   resource: "repos",   decision: "allow"   },
-  { id: "2", provider: "github", action: "read",   resource: "issues",  decision: "allow"   },
-  { id: "3", provider: "github", action: "write",  resource: "issues",  decision: "step-up" },
-  { id: "4", provider: "github", action: "delete", resource: "repos",   decision: "allow"   },
+  {
+    id: "1",
+    provider: "github",
+    action: "read",
+    resource: "repos",
+    decision: "allow",
+  },
+  {
+    id: "2",
+    provider: "github",
+    action: "read",
+    resource: "issues",
+    decision: "allow",
+  },
+  {
+    id: "3",
+    provider: "github",
+    action: "write",
+    resource: "issues",
+    decision: "step-up",
+  },
+  {
+    id: "4",
+    provider: "github",
+    action: "delete",
+    resource: "repos",
+    decision: "allow",
+  },
 ];
 
 let policies: PolicyRule[] = [...DEFAULT_POLICIES];
 
-export function getPolicies() { return policies; }
-export function setPolicies(p: PolicyRule[]) { policies = p; }
+export function getPolicies() {
+  return policies;
+}
+export function setPolicies(p: PolicyRule[]) {
+  policies = p;
+}
 
 export function evaluate(
-  provider: Provider, action: Action, resource: string,
+  provider: Provider,
+  action: Action,
+  resource: string,
 ): "allow" | "block" | "step-up" {
   const rule = policies.find(
-    p => p.provider === provider && p.action === action && p.resource === resource,
+    (p) =>
+      p.provider === provider && p.action === action && p.resource === resource,
   );
   return rule?.decision ?? "block";
 }

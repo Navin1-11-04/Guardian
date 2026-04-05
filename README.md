@@ -2,35 +2,35 @@
 
 > **A delegated consent firewall for AI agents.** Keep sovereign AI models secure while letting them interact with your digital life through Auth0's Token Vault.
 
-## 🎯 The Problem
+## The Problem
 
 Open AI models like Llama are bringing sovereign AI to everyone—running locally on machines, browsers, even phones. But here's the catch: **powerful AI agents need access to your APIs, but you can't just give them raw credentials.**
 
 Guardian solves this by acting as a **trusted intermediary**. Your AI agent talks to Guardian, Guardian evaluates policies, and only approved actions reach your APIs—keeping your secrets safe.
 
-## ✨ Key Features
+## Key Features
 
-### 🔐 **Policy-Driven Authorization**
+### Policy-Driven Authorization
 - Define rules: `allow`, `block`, or `step-up` auth for each action
 - Fine-grained control: per-provider, per-action, per-resource
 - Real-time audit trail: see exactly what the agent tried to do
 
-### 🔑 **Auth0 Token Vault Integration**
+### Auth0 Token Vault Integration
 - Secure OAuth token management—no credentials in code
 - Multi-provider support: GitHub, Google Drive, Slack, more
 - Token refresh & consent delegation built-in
 
-### 🛡️ **Multi-Step Authentication**
+### Multi-Step Authentication
 - Sensitive operations trigger `step-up` authentication
 - Agent waits for user approval before proceeding
 - Keeps humans in control
 
-### 📊 **Audit & Compliance**
+### Audit & Compliance
 - Live audit log of all agent actions
 - Decision tracking: which policies applied, results
 - Export-ready for security reviews
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 ┌─────────────────┐
@@ -67,7 +67,7 @@ Guardian solves this by acting as a **trusted intermediary**. Your AI agent talk
 └─────────────────┘
 ```
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 - Node.js 18+
@@ -114,7 +114,7 @@ npm run dev
 
 Visit [http://localhost:3000](http://localhost:3000)
 
-## 📖 Usage
+## Usage
 
 ### 1. **Set Up Policies**
 Click **"Policies & Audit"** to configure what your agent can do:
@@ -134,7 +134,7 @@ See real-time activity:
 - Which were blocked
 - Which required step-up auth
 
-## 🎨 Tech Stack
+## Tech Stack
 
 - **Frontend**: Next.js 16, React 19, TypeScript, Tailwind CSS
 - **Backend**: Next.js API Routes, Auth0, LangChain
@@ -144,7 +144,7 @@ See real-time activity:
   - Google Drive (googleapis)
   - Auth0 Token Vault
 
-## 🔧 API Routes
+## API Routes
 
 ### `POST /api/agent`
 Send a message to the AI agent.
@@ -170,7 +170,7 @@ Update security policies.
 ### `GET /api/audit`
 Fetch audit log.
 
-## 🛠️ Customization
+## Customization
 
 ### Add a New Tool
 1. Create the tool function in `lib/guardian/`
@@ -214,7 +214,7 @@ const model = new ChatOpenAI({
 });
 ```
 
-## 🎬 Demo Workflow
+## Demo Workflow
 
 1. **User logs in** via Auth0
 2. **User asks**: "Create an issue on Guardian repo"
@@ -225,18 +225,18 @@ const model = new ChatOpenAI({
 7. **Audit log** records the action with full details
 8. **User sees** success card with issue link
 
-## 🏆 Built For
+## Built For
 
 **Auth0 Authorized to Act Hackathon**
 
 Guardian showcases how **Auth0's Token Vault** enables secure AI agent orchestration:
-- ✅ Uses Token Vault for OAuth management
-- ✅ Multi-provider agent coordination
-- ✅ Step-up authentication on sensitive operations
-- ✅ Keeps users in control while letting agents act
-- ✅ Secure policy-driven access control
+- Uses Token Vault for OAuth management
+- Multi-provider agent coordination
+- Step-up authentication on sensitive operations
+- Keeps users in control while letting agents act
+- Secure policy-driven access control
 
-## 📂 Project Structure
+## Project Structure
 
 ```
 guardian/
@@ -264,7 +264,7 @@ guardian/
 └── README.md
 ```
 
-## 🔐 Security Notes
+## Security Notes
 
 - Never commit `.env.local` — use `.env.example` template
 - Auth0 secrets are never exposed to the client
@@ -272,7 +272,7 @@ guardian/
 - Audit logs are in-memory (use database for production)
 - Step-up auth requires Auth0 redirect for production deployment
 
-## 🚀 Deployment
+## Deployment
 
 ### Deploy to Vercel
 
@@ -290,15 +290,15 @@ npm run build
 npm start
 ```
 
-## 📝 License
+## License
 
 MIT
 
-## 🤝 Contributing
+## Contributing
 
 Pull requests welcome! For major changes, please open an issue first.
 
-## 💬 Questions?
+## Questions?
 
 - Check the [Auth0 AI Agents Docs](https://auth0.com/docs/get-started/authentication-and-authorization-flow/authorization-code-flow)
 - Review [LangChain Documentation](https://js.langchain.com/)
@@ -306,4 +306,4 @@ Pull requests welcome! For major changes, please open an issue first.
 
 ---
 
-**Built with ❤️ for the Auth0 Authorized to Act Hackathon**
+**Built for the Auth0 Authorized to Act Hackathon**
